@@ -21,6 +21,17 @@
   --input: 240 5.9% 90%;
   --ring: 240 5.9% 10%;
   --radius: 0.5rem;
+
+  /* Brand colours */
+  --brand-primary:   #0F6E56;
+  --brand-accent:    #1D9E75;
+  --brand-highlight: #9FE1CB;
+  --brand-surface:   #E1F5EE;
+
+  /* Logo SVG colours — updated per mode in .dark below */
+  --logo-mark-bg:     #0F6E56;
+  --logo-mark-stroke: #9FE1CB;
+  --logo-token-color: #0F6E56;
 }
 
 .dark {
@@ -43,6 +54,10 @@
   --border: 240 3.7% 15.9%;
   --input: 240 3.7% 15.9%;
   --ring: 240 4.9% 83.9%;
+
+  --logo-mark-bg:     #1D9E75;
+  --logo-mark-stroke: #E1F5EE;
+  --logo-token-color: #1D9E75;
 }
 
 @theme inline {
@@ -64,12 +79,22 @@
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
   --radius: var(--radius);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-syne);
+  --font-mono: var(--font-mono);
 }
 
 body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-syne), system-ui, sans-serif;
 }
+
+/* Subtle teal-tinted gradient on the page in light mode only */
+body:not(.dark) {
+  background: #f4faf7;
+}
+
+/* Logo SVG — driven by CSS variables so dark mode works without JS */
+.logo-mark-bg   { fill:   var(--logo-mark-bg); }
+.logo-mark-path { stroke: var(--logo-mark-stroke); }
+.logo-token     { color:  var(--logo-token-color); }

@@ -7,7 +7,8 @@
       "Bash(npm run *)",
       "Bash(Get-ChildItem C:\\\\Users\\\\pablo\\\\efficientAI -Name)",
       "Bash(Select-String \"eslint\")",
-      "Bash(npx tsx *)"
+      "Bash(npx tsx *)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\pablo\\\\efficientAI\" -Recurse -Force | Where-Object { $_.FullName -notmatch \"node_modules\" } | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"C:\\\\Users\\\\pablo\\\\efficientAI\\\\\", \"\"\\) } | Sort-Object)"
     ]
   }
 }

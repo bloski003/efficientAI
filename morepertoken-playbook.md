@@ -1,4 +1,4 @@
-# Smart LLM Router & Budget Dashboard — Build Playbook
+# MorePerToken — Build Playbook
 
 A staged plan for building with Claude Code. Decisions are already made so you can move fast.
 Build in order. Ship Phase 1 publicly before you touch Phase 2.
@@ -54,7 +54,7 @@ Ship Phase 1 to real users and gather feedback before committing to 2–4. Deman
 Claude Code reads this automatically every session. It's the highest-leverage thing you'll do.
 
 ```markdown
-# Project: Smart LLM Router & Budget Dashboard
+# Project: MorePerToken
 
 ## What this is
 A web app that estimates an LLM prompt's cost and recommends the most cost-efficient

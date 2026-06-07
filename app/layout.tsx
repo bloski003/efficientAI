@@ -1,20 +1,29 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Syne, DM_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const syne = Syne({
+  variable: "--font-syne",
   subsets: ["latin"],
+  weight: ["400", "600", "700", "800"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const dmMono = DM_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
-  title: "LLM Router — Cost Estimator",
-  description: "Estimate LLM prompt costs and get model recommendations.",
+  title: "MorePerToken — Find the right AI model for every prompt",
+  description:
+    "Paste your prompt to get cost estimates and model recommendations. No account needed, prices synced live.",
+  openGraph: {
+    title: "MorePerToken — Find the right AI model for every prompt",
+    description:
+      "Paste your prompt to get cost estimates and model recommendations. No account needed, prices synced live.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
@@ -25,9 +34,11 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${syne.variable} ${dmMono.variable} h-full antialiased`}
     >
-      <body suppressHydrationWarning className="min-h-full flex flex-col">{children}</body>
+      <body suppressHydrationWarning className="min-h-full flex flex-col">
+        {children}
+      </body>
     </html>
   );
 }
