@@ -29,17 +29,35 @@ interface RawProvider {
 
 type ModelsDevPayload = Record<string, RawProvider>;
 
+/**
+ * Sanity-check a display name. Rejects:
+ *  - Fewer than 2 tokens when split on whitespace OR hyphens
+ *    (catches single-word noise like "Banana" while accepting "GPT-5.4")
+ *  - Any character outside printable ASCII letters, digits, and common
+ *    model-name punctuation (catches emoji, control chars, etc.)
+ */
+function isValidDisplayName(name: string): boolean {
+  const tokens = name.trim().split(/[\s\-]+/).filter(Boolean);
+  return tokens.length >= 2 && /^[a-zA-Z0-9.\-_()\[\] ]+$/.test(name);
+}
+
 function mapRawModel(
   modelId: string,
   raw: RawModel,
   providerId: string
 ): ModelEntry | null {
-  const seed = lookupSeed(modelId) ?? lookupSeed(raw.name ?? "");
+  const seed = lookupSeed(modelId);
   if (!seed) return null;
+
+  const displayName = raw.name ?? modelId;
+  if (!isValidDisplayName(displayName)) {
+    console.warn(`[pricing] Dropping "${modelId}": display name failed sanity check.`);
+    return null;
+  }
 
   const result = ModelEntrySchema.safeParse({
     id: modelId,
-    displayName: raw.name ?? modelId,
+    displayName: displayName,
     provider: providerId,
     inputPricePerM: raw.cost?.input ?? 0,
     outputPricePerM: raw.cost?.output ?? 0,

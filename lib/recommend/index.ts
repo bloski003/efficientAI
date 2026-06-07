@@ -4,7 +4,6 @@ import { detectSignals, type DetectedSignals } from "./signals";
 export type { DetectedSignals } from "./signals";
 export { detectSignals } from "./signals";
 
-export const DEFAULT_BASELINE_ID = "gpt-5.5";
 const CONTEXT_MARGIN = 0.15;
 
 const TIER_RANK: Record<string, number> = { frontier: 2, balanced: 1, budget: 0 };
@@ -19,8 +18,6 @@ export type Recommendation = {
   slot: "cheapest" | "balanced" | "premium";
   model: ModelEntry;
   costRange: CostRange;
-  /** Savings vs baseline (negative = more expensive than baseline) */
-  savingsVsBaseline: number;
   reasons: string[];
 };
 
@@ -28,7 +25,6 @@ export type RecommendResult = {
   recommendations: Recommendation[];
   signals: DetectedSignals;
   requiredContext: number;
-  baselineCost: number | null;
   /** Models filtered out and why */
   filtered: { model: ModelEntry; reason: string }[];
 };
@@ -182,7 +178,6 @@ function buildReasons(
   inputTokens: number,
   estimatedOutput: number,
   requiredContext: number,
-  savings: number,
   matchScore: number,
   maxMatchScore: number
 ): string[] {
@@ -233,13 +228,6 @@ function buildReasons(
   // Tier + provider
   reasons.push(`Quality tier: ${model.qualityTier} · provider: ${model.provider}.`);
 
-  // Savings callout
-  if (savings > 0.0001) {
-    reasons.push(`Saves ~$${savings.toFixed(4)} vs baseline for this prompt.`);
-  } else if (savings < -0.0001) {
-    reasons.push(`~$${Math.abs(savings).toFixed(4)} more expensive than baseline.`);
-  }
-
   return reasons;
 }
 
@@ -252,10 +240,9 @@ export function recommendFromPrompt(
   prompt: string,
   inputTokens: number,
   estimatedOutput: number,
-  baselineId: string = DEFAULT_BASELINE_ID
 ): RecommendResult {
   const signals = detectSignals(prompt);
-  return recommendWithSignals(models, inputTokens, estimatedOutput, signals, baselineId);
+  return recommendWithSignals(models, inputTokens, estimatedOutput, signals);
 }
 
 export function recommendWithSignals(
@@ -263,7 +250,6 @@ export function recommendWithSignals(
   inputTokens: number,
   estimatedOutput: number,
   signals: DetectedSignals,
-  baselineId: string = DEFAULT_BASELINE_ID
 ): RecommendResult {
   const requiredContext = Math.ceil((inputTokens + estimatedOutput) * (1 + CONTEXT_MARGIN));
   const needsNonBudget = requiresNonBudget(signals);
@@ -291,7 +277,7 @@ export function recommendWithSignals(
   }
 
   if (surviving.length === 0) {
-    return { recommendations: [], signals, requiredContext, baselineCost: null, filtered };
+    return { recommendations: [], signals, requiredContext, filtered };
   }
 
   // ---- Step 2: score --------------------------------------------------------
@@ -307,15 +293,10 @@ export function recommendWithSignals(
   // ---- Step 3: pick slots ---------------------------------------------------
   const slots = pickSlots(scored, maxMatchScore);
 
-  // ---- Step 4: compute baseline cost for savings comparison ----------------
-  const baseline = models.find((m) => m.id === baselineId);
-  const baselineCost = baseline ? midCost(baseline, inputTokens, estimatedOutput) : null;
-
-  // ---- Step 5: build Recommendation objects --------------------------------
+  // ---- Step 4: build Recommendation objects --------------------------------
   const recommendations: Recommendation[] = slots.map(({ entry, slot }) => {
     const { model, matchScore, cost } = entry;
     const range = costRange(cost);
-    const savings = baselineCost !== null ? baselineCost - cost : 0;
     const reasons = buildReasons(
       model,
       signals,
@@ -323,12 +304,11 @@ export function recommendWithSignals(
       inputTokens,
       estimatedOutput,
       requiredContext,
-      savings,
       matchScore,
       maxMatchScore
     );
-    return { slot, model, costRange: range, savingsVsBaseline: savings, reasons };
+    return { slot, model, costRange: range, reasons };
   });
 
-  return { recommendations, signals, requiredContext, baselineCost, filtered };
+  return { recommendations, signals, requiredContext, filtered };
 }

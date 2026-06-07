@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(powershell -Command \"Invoke-WebRequest -Uri 'https://models.dev/api.json' -UseBasicParsing | Select-Object -ExpandProperty Content | ConvertFrom-Json | ConvertTo-Json -Depth 10 | Select-Object -First 100\")",
-      "Bash(powershell -Command ' *)"
+      "Bash(powershell -Command ' *)",
+      "Bash(xargs wc -l)",
+      "Bash(npm run *)",
+      "Bash(Get-ChildItem C:\\\\Users\\\\pablo\\\\efficientAI -Name)",
+      "Bash(Select-String \"eslint\")",
+      "Bash(npx tsx *)"
     ]
   }
 }

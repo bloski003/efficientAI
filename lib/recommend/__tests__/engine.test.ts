@@ -339,11 +339,52 @@ describe("reasons", () => {
     expect(premium.reasons.some((r) => r.toLowerCase().includes("headroom"))).toBe(true);
   });
 
-  it("savings vs baseline is a number for every recommendation", () => {
-    const result = recommendWithSignals(MODELS, 1_000, 500, {}, "frontier-all");
+  it("every recommendation has a costRange with low/mid/high", () => {
+    const result = recommendWithSignals(MODELS, 1_000, 500, {});
     for (const rec of result.recommendations) {
-      expect(typeof rec.savingsVsBaseline).toBe("number");
+      expect(rec.costRange.low).toBeLessThan(rec.costRange.mid);
+      expect(rec.costRange.high).toBeGreaterThan(rec.costRange.mid);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Filtered model subsets (model selector scenarios)
+// ---------------------------------------------------------------------------
+describe("filtered model subsets", () => {
+  it("subset of 3 models returns at most 3 recommendations", () => {
+    const subset = MODELS.slice(1, 4); // balanced-coding, frontier-json, frontier-all
+    const result = recommendWithSignals(subset, 100, 100, {});
+    expect(result.recommendations.length).toBeGreaterThan(0);
+    expect(result.recommendations.length).toBeLessThanOrEqual(3);
+  });
+
+  it("single model that passes filters returns exactly 1 recommendation", () => {
+    const result = recommendWithSignals([MODELS[1]], 100, 100, { coding: true });
+    expect(result.recommendations.length).toBe(1);
+  });
+
+  it("single model recommendation has slot 'cheapest'", () => {
+    const result = recommendWithSignals([MODELS[1]], 100, 100, {});
+    expect(result.recommendations[0].slot).toBe("cheapest");
+  });
+
+  it("empty model list returns no recommendations", () => {
+    const result = recommendWithSignals([], 100, 100, {});
+    expect(result.recommendations.length).toBe(0);
+  });
+
+  it("all models filtered by context returns no recommendations", () => {
+    // Passing only budget-chat (32k window) with a huge context requirement
+    const result = recommendWithSignals([MODELS[0]], 50_000, 5_000, {});
+    expect(result.recommendations.length).toBe(0);
+    expect(result.filtered.some((f) => f.model.id === "budget-chat")).toBe(true);
+  });
+
+  it("2-model subset returns at most 2 recommendations", () => {
+    const result = recommendWithSignals([MODELS[1], MODELS[2]], 100, 100, {});
+    expect(result.recommendations.length).toBeLessThanOrEqual(2);
+    expect(result.recommendations.length).toBeGreaterThan(0);
   });
 });
 

@@ -1,19 +1,13 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ModelEntry } from "@/lib/pricing/schema";
 import { estimateTokens } from "@/lib/tokens";
 import { recommendFromPrompt, type Recommendation } from "@/lib/recommend";
+import { ModelSelector } from "@/components/ModelSelector";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 type Props = {
@@ -22,23 +16,10 @@ type Props = {
   source: "live" | "fallback";
 };
 
-const BASELINE_OPTIONS = [
-  { id: "gpt-5.5", label: "GPT-5.5" },
-  { id: "gpt-5.4", label: "GPT-5.4" },
-  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-];
-
 const TIER_COLORS: Record<string, string> = {
   budget: "bg-emerald-100 text-emerald-800",
   balanced: "bg-blue-100 text-blue-800",
   frontier: "bg-purple-100 text-purple-800",
-};
-
-const SLOT_LABELS: Record<string, string> = {
-  cheapest: "Most Affordable",
-  balanced: "Balanced",
-  premium: "Premium",
 };
 
 const SLOT_BORDER: Record<string, string> = {
@@ -46,6 +27,8 @@ const SLOT_BORDER: Record<string, string> = {
   balanced: "border-blue-200",
   premium: "border-purple-200",
 };
+
+const LS_KEY = "llm-router:selected-models";
 
 function formatCost(n: number): string {
   if (n < 0.0001) return "<$0.0001";
@@ -67,8 +50,20 @@ function formatSynced(iso: string): string {
   }
 }
 
-function RecommendationCard({ rec }: { rec: Recommendation }) {
+function RecommendationCard({
+  rec,
+  rank,
+  totalTokens,
+}: {
+  rec: Recommendation;
+  rank: number;
+  totalTokens: number;
+}) {
   const [open, setOpen] = useState(false);
+
+  const rankLabel = rank === 0 ? "Best match" : "Alternative";
+  const costPer1k =
+    totalTokens > 0 ? (rec.costRange.mid / totalTokens) * 1000 : 0;
 
   return (
     <Card className={`border-2 ${SLOT_BORDER[rec.slot]}`}>
@@ -76,7 +71,7 @@ function RecommendationCard({ rec }: { rec: Recommendation }) {
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">
-              {SLOT_LABELS[rec.slot]}
+              {rankLabel}
             </p>
             <CardTitle className="text-base leading-tight">{rec.model.displayName}</CardTitle>
             <p className="text-xs text-zinc-500 mt-0.5 capitalize">{rec.model.provider}</p>
@@ -96,12 +91,11 @@ function RecommendationCard({ rec }: { rec: Recommendation }) {
           <p className="text-xs text-zinc-400 mt-0.5">mid: {formatCost(rec.costRange.mid)}</p>
         </div>
 
-        {/* Savings */}
-        {Math.abs(rec.savingsVsBaseline) > 0.00001 && (
-          <p className={`text-xs font-medium ${rec.savingsVsBaseline > 0 ? "text-emerald-600" : "text-red-500"}`}>
-            {rec.savingsVsBaseline > 0
-              ? `Saves ~${formatCost(rec.savingsVsBaseline)} vs baseline`
-              : `~${formatCost(Math.abs(rec.savingsVsBaseline))} more than baseline`}
+        {/* Cost per 1k tokens */}
+        {totalTokens > 0 && (
+          <p className="text-xs text-zinc-500">
+            ~{formatCost(costPer1k)}{" "}
+            <span className="text-zinc-400">per 1k tokens</span>
           </p>
         )}
 
@@ -132,24 +126,58 @@ function RecommendationCard({ rec }: { rec: Recommendation }) {
 export default function RouterClient({ models, lastSynced, source }: Props) {
   const [prompt, setPrompt] = useState("");
   const [outputOverride, setOutputOverride] = useState<string>("");
-  const [baselineId, setBaselineId] = useState("gpt-5.5");
+  const [selectorOpen, setSelectorOpen] = useState(false);
+  const allIds = useMemo(() => new Set(models.map((m) => m.id)), [models]);
+  // null = not yet mounted (server/skeleton state)
+  const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
 
-  const validBaselines = useMemo(
-    () =>
-      BASELINE_OPTIONS.filter((opt) =>
-        models.some((m) => m.id === opt.id)
-      ),
-    [models]
+  useEffect(() => {
+    let initial = allIds;
+    try {
+      const stored = localStorage.getItem(LS_KEY);
+      if (stored) {
+        const parsed: string[] = JSON.parse(stored);
+        const valid = new Set(parsed.filter((id) => allIds.has(id)));
+        if (valid.size > 0) initial = valid;
+      }
+    } catch {
+      // ignore malformed storage
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initialising from localStorage (external system) is a canonical useEffect use case
+    setSelectedIds(initial);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSelectionChange = useCallback(
+    (ids: Set<string>) => {
+      setSelectedIds(ids);
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify([...ids]));
+      } catch {
+        // ignore storage errors
+      }
+    },
+    []
+  );
+
+  const selectedModels = useMemo(
+    () => (selectedIds ? models.filter((m) => selectedIds.has(m.id)) : []),
+    [models, selectedIds]
   );
 
   const result = useMemo(() => {
-    if (!prompt.trim()) return null;
-    const est = estimateTokens(prompt, "gpt-5.5", outputOverride ? Number(outputOverride) : undefined);
+    if (!prompt.trim() || selectedModels.length === 0) return null;
+    const est = estimateTokens(
+      prompt,
+      "gpt-5.5",
+      outputOverride ? Number(outputOverride) : undefined
+    );
     return {
       est,
-      rec: recommendFromPrompt(models, prompt, est.inputTokens, est.estimatedOutput, baselineId),
+      rec: recommendFromPrompt(selectedModels, prompt, est.inputTokens, est.estimatedOutput),
+      totalTokens: est.inputTokens + est.estimatedOutput,
     };
-  }, [prompt, outputOverride, baselineId, models]);
+  }, [prompt, outputOverride, selectedModels]);
 
   const handleOutputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value;
@@ -193,6 +221,24 @@ export default function RouterClient({ models, lastSynced, source }: Props) {
         <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
           {/* Left panel */}
           <div className="flex flex-col gap-5 lg:w-[420px] shrink-0">
+            {/* Model selector */}
+            {selectedIds === null ? (
+              <div className="rounded-lg border border-zinc-200 bg-white">
+                <div className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-zinc-700 rounded-lg">
+                  <span>Model selection</span>
+                  <span className="text-xs text-zinc-500">{models.length} of {models.length} models selected</span>
+                </div>
+              </div>
+            ) : (
+              <ModelSelector
+                models={models}
+                selectedIds={selectedIds!}
+                open={selectorOpen}
+                onOpenChange={setSelectorOpen}
+                onChange={handleSelectionChange}
+              />
+            )}
+
             {/* Prompt */}
             <div className="flex flex-col gap-1.5">
               <label htmlFor="prompt" className="text-sm font-medium text-zinc-700">
@@ -209,12 +255,16 @@ export default function RouterClient({ models, lastSynced, source }: Props) {
               {result && (
                 <p className="text-xs text-zinc-500">
                   Input tokens:{" "}
-                  <span className="font-medium text-zinc-700">{result.est.inputTokens.toLocaleString()}</span>
+                  <span className="font-medium text-zinc-700">
+                    {result.est.inputTokens.toLocaleString()}
+                  </span>
                   {!result.est.inputIsExact && (
                     <span className="ml-1 text-zinc-400">(approx, char-ratio)</span>
                   )}
                   {" · "}task:{" "}
-                  <span className="font-medium text-zinc-700">{result.est.detectedTaskType}</span>
+                  <span className="font-medium text-zinc-700">
+                    {result.est.detectedTaskType}
+                  </span>
                 </p>
               )}
             </div>
@@ -230,7 +280,9 @@ export default function RouterClient({ models, lastSynced, source }: Props) {
                   id="output-tokens"
                   type="text"
                   inputMode="numeric"
-                  placeholder={result ? `auto: ${result.est.estimatedOutput.toLocaleString()}` : "auto"}
+                  placeholder={
+                    result ? `auto: ${result.est.estimatedOutput.toLocaleString()}` : "auto"
+                  }
                   value={outputOverride}
                   onChange={handleOutputChange}
                   className="w-40 rounded-md border border-zinc-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400"
@@ -246,27 +298,6 @@ export default function RouterClient({ models, lastSynced, source }: Props) {
                   </button>
                 )}
               </div>
-            </div>
-
-            {/* Baseline selector */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-zinc-700">Savings baseline</label>
-              <Select value={baselineId} onValueChange={setBaselineId}>
-                <SelectTrigger className="w-48" aria-label="Savings baseline model">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {validBaselines.map((opt) => (
-                    <SelectItem key={opt.id} value={opt.id}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                  {validBaselines.length === 0 && (
-                    <SelectItem value="gpt-5.5">GPT-5.5</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-zinc-400">Savings are shown relative to this model.</p>
             </div>
 
             {/* Signal badges */}
@@ -288,16 +319,22 @@ export default function RouterClient({ models, lastSynced, source }: Props) {
 
           {/* Right panel — recommendations */}
           <div className="flex-1 min-w-0">
-            {!prompt.trim() ? (
+            {selectedModels.length === 0 ? (
+              <div className="flex h-48 items-center justify-center rounded-xl border-2 border-dashed border-amber-200 bg-amber-50 text-sm text-amber-700">
+                Select at least one model to get recommendations
+              </div>
+            ) : !prompt.trim() ? (
               <div className="flex h-48 items-center justify-center rounded-xl border-2 border-dashed border-zinc-200 text-sm text-zinc-400">
                 Enter a prompt to see recommendations
               </div>
             ) : result && result.rec.recommendations.length === 0 ? (
               <div className="rounded-xl border-2 border-dashed border-red-200 bg-red-50 px-6 py-8 text-center">
-                <p className="font-medium text-red-700">No models fit your requirements</p>
+                <p className="font-medium text-red-700">
+                  None of your selected models support this context length
+                </p>
                 <p className="mt-1 text-sm text-red-500">
                   Required context: ~{(result.rec.requiredContext / 1000).toFixed(0)}k tokens.
-                  Try shortening your prompt or reducing the output estimate.
+                  Select models with larger context windows, or shorten your prompt.
                 </p>
               </div>
             ) : (
@@ -308,9 +345,20 @@ export default function RouterClient({ models, lastSynced, source }: Props) {
                     {result?.rec.requiredContext.toLocaleString()} tokens
                   </span>
                 </p>
+                {result && result.rec.recommendations.length === 1 &&
+                  result.rec.filtered.length + 1 < selectedModels.length && (
+                    <p className="text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2 border border-amber-200">
+                      Only 1 of your selected models fits this context length
+                    </p>
+                  )}
                 <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-                  {result?.rec.recommendations.map((rec) => (
-                    <RecommendationCard key={rec.model.id} rec={rec} />
+                  {result?.rec.recommendations.map((rec, i) => (
+                    <RecommendationCard
+                      key={rec.model.id}
+                      rec={rec}
+                      rank={i}
+                      totalTokens={result.totalTokens}
+                    />
                   ))}
                 </div>
                 {result && result.rec.filtered.length > 0 && (
